@@ -1,0 +1,1 @@
+RAG (Retrieval-Augmented Generation) retrieves relevant chunks from your documents and uses them as context to generate grounded answers.

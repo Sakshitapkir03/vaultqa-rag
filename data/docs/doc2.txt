@@ -1,0 +1,1 @@
+SafeDriveAI is a platform that analyzes vehicle telemetry to estimate driver risk and generate explainable safety summaries.

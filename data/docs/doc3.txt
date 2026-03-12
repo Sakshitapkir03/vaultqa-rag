@@ -1,0 +1,1 @@
+Customer churn modeling predicts which users may leave using behavior patterns and demographics, and can be visualized in dashboards.

@@ -1,0 +1,12 @@
+[
+  {
+    "question": "What is this document about?",
+    "expected_intent": "summary",
+    "expected_source": "Champa Jaan Backstory.pdf"
+  },
+  {
+    "question": "Who is Champa Jaan?",
+    "expected_intent": "definition",
+    "expected_source": "Champa Jaan Backstory.pdf"
+  }
+]
