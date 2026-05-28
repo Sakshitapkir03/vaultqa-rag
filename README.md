@@ -6,6 +6,19 @@ VaultQA is a production-grade Retrieval-Augmented Generation (RAG) system that l
 
 ---
 
+## Screenshots
+
+### Ask Mode
+![Ask Mode](docs/screenshots/ask-mode.png)
+
+### Deep Research Mode
+![Deep Research Mode](docs/screenshots/deep-research-mode.png)
+
+### Deep Research in Progress
+![Deep Research Progress](docs/screenshots/deep-research-progress.png)
+
+---
+
 ## Architecture
 
 ```
