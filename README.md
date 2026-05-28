@@ -13,8 +13,9 @@ VaultQA is a production-grade Retrieval-Augmented Generation (RAG) system that l
 │                         DOCUMENT INGESTION                              │
 │                                                                         │
 │  PDF / TXT ──► Validate ──► Extract Pages ──► Chunk Text               │
-│                (SHA256,      (pypdf primary,   (1200 chars,             │
-│                 200MB)        fitz fallback)    200 overlap)            │
+│                (SHA256,      (PyPDFLoader,      (RecursiveCharacter-    │
+│                 200MB)        PyMuPDFLoader      TextSplitter,          │
+│                               via LangChain)    1200/200 overlap)      │
 │                                    │                                    │
 │                                    ▼                                    │
 │                           Embed (all-MiniLM-L6-v2)                     │
@@ -46,10 +47,10 @@ VaultQA is a production-grade Retrieval-Augmented Generation (RAG) system that l
 │           (heuristic boosts)     (max 2/page)       (±2–3 chunks)      │
 │                    │                                                    │
 │                    ▼                                                    │
-│           Confidence Gate ──► Prompt Builder ──► Ollama (llama3.1:8b) │
-│           (best≥0.16,          (3 templates:      temp=0.05            │
-│            avg≥0.12)            fact/summary/      ctx=8192)           │
-│                                 definition)                             │
+│           Confidence Gate ──► Prompt Builder ──► OllamaLLM             │
+│           (best≥0.16,          (3 templates:      (LangChain,          │
+│            avg≥0.12)            fact/summary/      llama3.1:8b,        │
+│                                 definition)        temp=0.05)          │
 │                    │                                                    │
 │                    ▼                                                    │
 │           Post-Process ──► Cited Answer                                 │
@@ -68,8 +69,12 @@ VaultQA is a production-grade Retrieval-Augmented Generation (RAG) system that l
 | FastAPI | 0.128.8 | REST API framework, async request handling |
 | Uvicorn | 0.39.0 | ASGI production server |
 | Pydantic | 2.12.5 | Request/response schema validation |
+| LangChain | latest | RAG pipeline — document loading, text splitting, LLM orchestration |
+| langchain-community | latest | `PyPDFLoader` and `PyMuPDFLoader` document loaders |
+| langchain-text-splitters | latest | `RecursiveCharacterTextSplitter` for chunking |
+| langchain-ollama | latest | `OllamaLLM` for local LLM inference |
 | haystack-ai | 2.21.0 | Pipeline orchestration scaffolding |
-| requests | 2.32.5 | HTTP client for Ollama API calls |
+| requests | 2.32.5 | HTTP client for streaming Ollama responses |
 | python-dotenv | 1.2.1 | Environment variable loading |
 
 ### AI / ML
@@ -78,13 +83,13 @@ VaultQA is a production-grade Retrieval-Augmented Generation (RAG) system that l
 |---|---|---|
 | sentence-transformers | 5.1.2 | `all-MiniLM-L6-v2` embedding model (384-D) |
 | FAISS (CPU) | 1.13.0 | `IndexFlatIP` vector similarity search |
-| pypdf | 6.7.5 | Primary PDF text extraction |
-| PyMuPDF (fitz) | 1.26.5 | Fallback PDF extraction for scanned documents |
+| pypdf | 6.7.5 | PDF parsing backend (used via LangChain `PyPDFLoader`) |
+| PyMuPDF (fitz) | 1.26.5 | Fallback PDF backend for scanned documents (via LangChain `PyMuPDFLoader`) |
 | Transformers | 4.57.6 | HuggingFace model infrastructure |
 | PyTorch | 2.8.0 | Deep learning backend for embeddings |
 | numpy | 2.0.2 | Vector math, L2 normalization |
 | scikit-learn | 1.6.1 | ML utilities |
-| Ollama | 0.6.1 | Local LLM inference server |
+| Ollama | 0.6.1 | Local LLM inference server (orchestrated via LangChain `OllamaLLM`) |
 
 ### Frontend
 
@@ -125,11 +130,11 @@ VaultQA is a production-grade Retrieval-Augmented Generation (RAG) system that l
 1. **Doc type inference** — `guess_doc_type()` in `chunking.py` inspects the filename for keywords: `resume`/`cv` → `"resume"`, `policy` → `"policy"`, `manual` → `"manual"`, `report` → `"report"`, `paper`/`research` → `"paper"`, `notes` → `"notes"`, else `"general"`.
 
 2. **PDF text extraction** — `extract_pdf_pages()` in `pdf_extract.py`:
-   - **Primary path**: pypdf — fast and reliable for digitally-created PDFs.
-   - **Fallback path**: PyMuPDF (`fitz`) — activated automatically when more than 25% of pages return empty text (common for scanned or image-heavy PDFs).
+   - **Primary path**: LangChain's `PyPDFLoader` (`langchain_community.document_loaders`) — loads each page as a `Document` object with `page_content` and `metadata`.
+   - **Fallback path**: LangChain's `PyMuPDFLoader` — activated automatically when more than 25% of pages return empty text (common for scanned or image-heavy PDFs).
    - Each page returns `{ text, page, section_type, section_title, year, heading_path }`.
 
-3. **Chunking** — `chunk_text()` in `chunking.py` splits page text into chunks of 1200 characters with 200-character overlap. The algorithm is paragraph-aware: it accumulates paragraphs (`\n\n`-delimited) until the chunk size is reached, respecting semantic boundaries. Oversized single paragraphs fall back to character-level splitting with overlap.
+3. **Chunking** — `chunk_text()` in `chunking.py` uses LangChain's `RecursiveCharacterTextSplitter` with `chunk_size=1200`, `chunk_overlap=200`, and `separators=["\n\n", "\n", " ", ""]`. The recursive strategy tries paragraph boundaries first, then line breaks, then words — preserving semantic units wherever possible.
 
 4. **Embedding** — Each chunk is encoded with `SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")` in batches of 32. Embeddings are L2-normalized (`v / (‖v‖ + 1e-12)`) before storage.
 
@@ -178,16 +183,15 @@ VaultQA is a production-grade Retrieval-Augmented Generation (RAG) system that l
 
 9. **Prompt construction** — `_build_prompt()` selects one of three system prompt templates based on query mode. All three embed an explicit identity instruction ("You are VaultQA, a document-only assistant"), prohibit inventing information not in the context, suppress multiple-choice formatting, and inject the retrieved context and question.
 
-10. **LLM inference** — `_generate_answer()` calls `POST {OLLAMA_URL}/api/generate` with:
+10. **LLM inference** — `_generate_answer()` calls LangChain's `OllamaLLM.invoke(prompt)`. The `OllamaLLM` instance is initialized in `RAGEngine.__init__()` with:
     ```
     model:       llama3.1:8b
+    base_url:    http://localhost:11434
     temperature: 0.05
     num_predict: 800
     num_ctx:     8192
     top_k:       15
     top_p:       0.85
-    stream:      false
-    timeout:     120s
     ```
 
 11. **Post-processing & citations** — `clean_answer_text()` strips known model artifacts (bad sentence starters, multiple-choice markers, `Answer:` prefixes). `_make_citations()` formats up to 8 citations as `{ source, page, chunk_id, score, quote }` where `quote` is the first 220 characters of the matched chunk.
@@ -202,9 +206,9 @@ For complex, multi-faceted questions, `DeepResearchEngine` in `deep_research.py`
 
 3. **Per-sub-question retrieval** — Each sub-question runs hybrid retrieval (top-12 dense, top-12 lexical, top-8 fused) followed by reranking to top-4.
 
-4. **Per-sub-question generation** — Each sub-question is answered with `temperature=0.1`, `num_predict=400`, `top_k=20`, `top_p=0.9`. Source references `(source p#)` are included in the answer.
+4. **Per-sub-question generation** — Each sub-question is answered via `self.llm_subq.invoke(prompt)` using a LangChain `OllamaLLM` instance with `temperature=0.1`, `num_predict=400`, `top_k=20`, `top_p=0.9`. Source references `(source p#)` are included in the answer.
 
-5. **Synthesis** — `_synthesize_report()` makes a final LLM call (`temperature=0.1`, `num_predict=600`) combining all findings into a structured report with four sections: Overview, Key Findings, Evidence Summary, and Conclusion.
+5. **Synthesis** — `_synthesize_report()` calls `self.llm_synthesis.invoke(prompt)` using a second LangChain `OllamaLLM` instance (`temperature=0.1`, `num_predict=600`) to combine all findings into a structured report: Overview, Key Findings, Evidence Summary, and Conclusion.
 
 6. **Verification & contradiction** — `verify_answer()` confirms citations are present and the answer is non-empty. `detect_contradiction()` runs pattern matching for opposite-term pairs (must/must not, required/not required, allowed/not allowed, can/cannot).
 
@@ -363,10 +367,17 @@ cd vaultqa-rag
 
 ```bash
 cd backend
+pip install -r requirements.txt
+```
+
+Or manually:
+
+```bash
 pip install fastapi uvicorn pydantic python-dotenv requests numpy
+pip install langchain langchain-community langchain-text-splitters langchain-ollama
 pip install sentence-transformers faiss-cpu pypdf pymupdf
 pip install transformers torch haystack-ai scikit-learn scipy
-pip install python-jose supabase
+pip install python-jose
 ```
 
 ### 3. Configure backend environment
