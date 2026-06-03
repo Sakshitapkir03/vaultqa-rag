@@ -1,12 +1,92 @@
 [
   {
-    "question": "What is this document about?",
-    "expected_intent": "summary",
-    "expected_source": "Champa Jaan Backstory.pdf"
+    "id": "tc_001",
+    "question": "Who is Gregor Samsa?",
+    "source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "expected_intent": "definition",
+    "expected_keywords": ["traveling salesman", "vermin", "family"],
+    "expected_source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "should_refuse": false
   },
   {
-    "question": "Who is Champa Jaan?",
+    "id": "tc_002",
+    "question": "Summarize this document",
+    "source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "expected_intent": "summary",
+    "expected_keywords": ["transformation", "family", "Gregor"],
+    "expected_source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_003",
+    "question": "When does Gregor's transformation take place in the story?",
+    "source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "expected_intent": "timeline",
+    "expected_keywords": ["morning", "woke"],
+    "expected_source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_004",
+    "question": "Compare Gregor's relationship with his sister at the start of the story versus the end",
+    "source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "expected_intent": "comparison",
+    "expected_keywords": ["sister", "Grete"],
+    "expected_source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_005",
+    "question": "What contradictions exist in how Gregor's father treats him throughout the story?",
+    "source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "expected_intent": "contradiction_check",
+    "expected_keywords": ["father", "Gregor"],
+    "expected_source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_006",
+    "question": "What is a relational database model?",
+    "source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
     "expected_intent": "definition",
-    "expected_source": "Champa Jaan Backstory.pdf"
+    "expected_keywords": ["tables", "relations", "attributes"],
+    "expected_source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_007",
+    "question": "Give me an overview of the main points covered in this document",
+    "source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "expected_intent": "summary",
+    "expected_keywords": ["database", "design", "management"],
+    "expected_source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_008",
+    "question": "What is the sequence of steps in the systems development life cycle?",
+    "source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "expected_intent": "timeline",
+    "expected_keywords": ["planning", "analysis", "design"],
+    "expected_source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_009",
+    "question": "Analyze how normalization helps maintain data integrity in a database",
+    "source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "expected_intent": "research_synthesis",
+    "expected_keywords": ["normalization", "redundancy", "integrity"],
+    "expected_source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_010",
+    "question": "What were the stock prices of Apple and Microsoft in 2023?",
+    "source": null,
+    "expected_intent": "fact_extraction",
+    "expected_keywords": [],
+    "expected_source": null,
+    "should_refuse": true
   }
 ]

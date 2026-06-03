@@ -1,17 +1,47 @@
+import { createClient } from "@/lib/supabase/client";
 const BASE = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+async function authHeaders(json = true) {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
+  const headers: Record<string, string> = {};
+
+  if (json) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  if (session?.access_token) {
+    headers["Authorization"] = `Bearer ${session.access_token}`;
+  }
+
+  return headers;
+}
 export async function getLibrary() {
-  const res = await fetch(`${BASE}/library`, { cache: "no-store" });
+  const res = await fetch(`${BASE}/library`, {
+    cache: "no-store",
+    headers: await authHeaders(false),
+  });
+
   if (!res.ok) throw new Error("Failed to load library");
   return res.json();
 }
 
 export async function uploadFile(file: File) {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
   const form = new FormData();
   form.append("file", file);
 
   const res = await fetch(`${BASE}/upload`, {
     method: "POST",
+    headers: session?.access_token
+      ? { Authorization: `Bearer ${session.access_token}` }
+      : {},
     body: form,
   });
 
@@ -19,7 +49,11 @@ export async function uploadFile(file: File) {
   return res.json();
 }
 
-export async function indexFile(filename: string, collection: string, doc_type?: string) {
+export async function indexFile(
+  filename: string,
+  collection: string,
+  doc_type?: string
+) {
   const res = await fetch(`${BASE}/index`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -135,4 +169,86 @@ export async function deepResearchStream(
       // ignore trailing malformed chunk
     }
   }
+}
+
+export async function getConversations() {
+  const res = await fetch(`${BASE}/conversations`, {
+    cache: "no-store",
+    headers: await authHeaders(false),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to load conversations: ${res.status} ${text}`);
+  }
+
+  return res.json();
+}
+
+export async function createConversation(payload: {
+  title: string;
+  mode: string;
+  source?: string;
+}) {
+  const res = await fetch(`${BASE}/conversations`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) throw new Error("Failed to create conversation");
+  return res.json();
+}
+
+export async function getConversation(conversationId: string) {
+  const res = await fetch(`${BASE}/conversations/${conversationId}`, {
+    cache: "no-store",
+    headers: await authHeaders(false),
+  });
+
+  if (!res.ok) throw new Error("Failed to load conversation");
+  return res.json();
+}
+
+export async function deleteConversation(conversationId: string) {
+  const res = await fetch(`${BASE}/conversations/${conversationId}`, {
+    method: "DELETE",
+    headers: await authHeaders(false),
+  });
+
+  if (!res.ok) throw new Error("Failed to delete conversation");
+  return res.json();
+}
+
+export async function addMessageToConversation(
+  conversationId: string,
+  payload: {
+    role: string;
+    content: string;
+    citations?: any[];
+    research?: Record<string, any>;
+  }
+) {
+  const res = await fetch(`${BASE}/conversations/${conversationId}/messages`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) throw new Error("Failed to save message");
+  return res.json();
+}
+
+export async function deleteDocument(filename: string) {
+  const res = await fetch(`${BASE}/documents/${encodeURIComponent(filename)}`, {
+    method: "DELETE",
+    headers: await authHeaders(false),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to delete document: ${res.status} ${text}`);
+  }
+
+  return res.json();
 }

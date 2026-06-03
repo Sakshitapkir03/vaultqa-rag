@@ -7,3 +7,7 @@ __pycache__
 .DS_Store
 data/uploads
 data/index
+backend/data/
+data/app.db
+test_data/
+*.db

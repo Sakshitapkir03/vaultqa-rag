@@ -2,12 +2,20 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { createClient } from "@/lib/supabase/client";
 import {
+  ask,
   askStream,
   deepResearchStream,
   getLibrary,
   indexFile,
   uploadFile,
+  getConversations,
+  createConversation,
+  getConversation,
+  deleteConversation,
+  addMessageToConversation,
+  deleteDocument,
 } from "@/lib/api";
 
 type IndexedDoc = {
@@ -35,6 +43,7 @@ type ChatMsg =
       confidence?: number;
       contradiction?: boolean;
       citations?: Citation[];
+      top_candidates?: Citation[];
     };
 
 type ResearchStep = {
@@ -61,12 +70,26 @@ type ResearchResult = {
 
 type Mode = "ask" | "research";
 
+type ConversationItem = {
+  id: string;
+  title: string;
+  mode: string;
+  source?: string | null;
+  created_at: number;
+  updated_at: number;
+};
+
 const starterPrompts = [
   "Summarize this document",
   "List the key takeaways",
   "Explain this simply",
   "Create study questions",
 ];
+
+const defaultAssistantMessage: ChatMsg = {
+  role: "assistant",
+  text: "Upload a document from the left panel and ask a question. I will answer only from your uploaded content and show the supporting sources.",
+};
 
 function timeAgo(ts: number) {
   const now = Math.floor(Date.now() / 1000);
@@ -185,7 +208,10 @@ function ResearchReport({
           <div className="text-sm font-medium text-zinc-100">Research Plan</div>
           <div className="mt-3 space-y-2">
             {result.plan.sub_questions.map((q, i) => (
-              <div key={i} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-300">
+              <div
+                key={i}
+                className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-300"
+              >
                 {i + 1}. {q}
               </div>
             ))}
@@ -207,8 +233,13 @@ function ResearchReport({
           <div className="text-sm font-medium text-zinc-100">Findings</div>
           <div className="mt-4 space-y-4">
             {result.findings.map((f, i) => (
-              <div key={i} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="text-sm font-medium text-zinc-100">{f.sub_question}</div>
+              <div
+                key={i}
+                className="rounded-2xl border border-white/10 bg-black/20 p-4"
+              >
+                <div className="text-sm font-medium text-zinc-100">
+                  {f.sub_question}
+                </div>
                 <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-300">
                   {f.answer}
                 </div>
@@ -218,7 +249,7 @@ function ResearchReport({
         </div>
       ) : null}
 
-      {result.citations?.length ? (
+      {false && result.citations?.length ? (
         <details className="overflow-hidden rounded-2xl border border-white/10 bg-black/20">
           <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-zinc-200">
             Sources ({result.citations.length})
@@ -254,12 +285,7 @@ export default function Home() {
   const [uploaded, setUploaded] = useState<string[]>([]);
   const [indexed, setIndexed] = useState<IndexedDoc[]>([]);
   const [selectedFile, setSelectedFile] = useState("");
-  const [messages, setMessages] = useState<ChatMsg[]>([
-    {
-      role: "assistant",
-      text: "Upload a document from the left panel and ask a question. I will answer only from your uploaded content and show the supporting sources.",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMsg[]>([defaultAssistantMessage]);
 
   const [mode, setMode] = useState<Mode>("ask");
   const [researchResult, setResearchResult] = useState<ResearchResult | null>(null);
@@ -270,20 +296,87 @@ export default function Home() {
   const [error, setError] = useState("");
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
 
-  async function refresh() {
-    const lib = await getLibrary();
-    setUploaded(lib.uploaded || []);
-    setIndexed(lib.indexed || []);
-  }
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const [pinnedChats, setPinnedChats] = useState<string[]>([]);
 
   useEffect(() => {
-    refresh();
+    const supabase = createClient();
+    let mounted = true;
+
+    supabase.auth.getSession().then(() => {
+      if (mounted) setAuthReady(true);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      if (mounted) setAuthReady(true);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    try {
+      const saved = localStorage.getItem("vaultqa-pinned-chats");
+      if (saved) {
+        setPinnedChats(JSON.parse(saved));
+      }
+    } catch (err) {
+      console.error("Failed to load pinned chats", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("vaultqa-pinned-chats", JSON.stringify(pinnedChats));
+    } catch (err) {
+      console.error("Failed to save pinned chats", err);
+    }
+  }, [pinnedChats]);
+
+  async function refresh() {
+    try {
+      const lib = await getLibrary();
+      setUploaded(lib.uploaded || []);
+      setIndexed(lib.indexed || []);
+    } catch (err: any) {
+      console.error("refresh library failed:", err);
+      setUploaded([]);
+      setIndexed([]);
+    }
+  }
+
+  async function refreshConversations() {
+    try {
+      const data = await getConversations();
+      setConversations(data.items || []);
+    } catch (err: any) {
+      console.error("refreshConversations failed:", err);
+      setConversations([]);
+    }
+  }
+
+  useEffect(() => {
+    if (!authReady) return;
+    refresh();
+    refreshConversations();
+  }, [authReady]);
+
+  useEffect(() => {
+    setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+    }, 50);
   }, [messages, loading, researchResult]);
 
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -306,6 +399,65 @@ export default function Home() {
     }
   }
 
+  function resetChatState() {
+    setActiveConversationId(null);
+    setMessages([defaultAssistantMessage]);
+    setResearchResult(null);
+    setInput("");
+    setMode("ask");
+  }
+
+  async function ensureConversation(q: string, currentMode: Mode): Promise<string> {
+    if (activeConversationId) {
+      return activeConversationId;
+    }
+
+    const conv = await createConversation({
+      title: q.slice(0, 60),
+      mode: currentMode,
+      source: selectedFile || undefined,
+    });
+
+    setActiveConversationId(conv.id);
+    await refreshConversations();
+    return conv.id;
+  }
+
+  async function loadConversation(conversationId: string) {
+    try {
+      const data = await getConversation(conversationId);
+      setActiveConversationId(conversationId);
+
+      const restoredMessages: ChatMsg[] = (data.messages || [])
+        .filter((m: any) => !m.research || Object.keys(m.research).length === 0)
+        .map((m: any) => ({
+          role: m.role,
+          text: m.content,
+          citations: m.citations || [],
+          top_candidates: m.top_candidates || [],
+        }));
+
+      setMessages(restoredMessages.length ? restoredMessages : [defaultAssistantMessage]);
+
+      const researchMsg = (data.messages || []).find(
+        (m: any) => m.research && Object.keys(m.research).length > 0
+      );
+      setResearchResult(researchMsg ? researchMsg.research : null);
+
+      if (data.conversation?.mode === "research") {
+        setMode("research");
+      } else {
+        setMode("ask");
+      }
+
+      if (data.conversation?.source) {
+        setSelectedFile(data.conversation.source);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load conversation");
+    }
+  }
+
   async function sendAsk(text: string) {
     const q = text.trim();
     if (!q || loading) return;
@@ -315,21 +467,33 @@ export default function Home() {
     setResearchResult(null);
     setLoading(true);
 
-    setMessages((prev) => [...prev, { role: "user", text: q }]);
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "assistant",
-        text: "",
-        grounded: true,
-        confidence: 0.8,
-        contradiction: false,
-        citations: [],
-      },
-    ]);
+    let conversationId = "";
+    let fullAnswer = "";
 
     try {
+      conversationId = await ensureConversation(q, "ask");
+
+      setMessages((prev) => [...prev, { role: "user", text: q }]);
+      await addMessageToConversation(conversationId, {
+        role: "user",
+        content: q,
+      });
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          text: "",
+          grounded: true,
+          confidence: 0.8,
+          contradiction: false,
+          citations: [],
+          top_candidates: [],
+        },
+      ]);
+
       await askStream(q, { source: selectedFile || undefined }, (chunk) => {
+        fullAnswer += chunk;
         setMessages((prev) => {
           const idx = prev.length - 1;
           if (idx < 0) return prev;
@@ -340,6 +504,36 @@ export default function Home() {
           );
         });
       });
+
+      const meta = await ask(q, { source: selectedFile || undefined });
+
+      setMessages((prev) => {
+        const idx = prev.length - 1;
+        if (idx < 0) return prev;
+
+        return prev.map((msg, i) =>
+          i === idx && msg.role === "assistant"
+            ? {
+                ...msg,
+                text: fullAnswer || meta.answer || msg.text,
+                grounded: true, // Simplified - assume grounded since we have an answer
+                confidence: 1.0, // Simplified - assume high confidence
+                contradiction: false, // Simplified - assume no contradiction
+                citations: [], // No citations in simplified response
+                top_candidates: [], // No top candidates in simplified response
+              }
+            : msg
+        );
+      });
+
+      await addMessageToConversation(conversationId, {
+        role: "assistant",
+        content: fullAnswer || meta.answer || "Answer generated.",
+        citations: [], // No citations in simplified response
+        research: {},
+      });
+
+      await refreshConversations();
     } catch (err: any) {
       setError(err.message || "Ask failed");
     } finally {
@@ -355,14 +549,26 @@ export default function Home() {
     setError("");
     setLoading(true);
 
-    setResearchResult({
+    let conversationId = "";
+    let finalResearch: ResearchResult = {
       steps: [],
       findings: [],
       citations: [],
       report: "",
-    });
+    };
+
+    setResearchResult(finalResearch);
 
     try {
+      conversationId = await ensureConversation(q, "research");
+
+      await addMessageToConversation(conversationId, {
+        role: "user",
+        content: q,
+      });
+
+      setMessages((prev) => [...prev, { role: "user", text: q }]);
+
       await deepResearchStream(q, selectedFile || undefined, (event) => {
         const type = event?.type;
         const data = event?.data;
@@ -375,51 +581,53 @@ export default function Home() {
             report: "",
           };
 
+          let updated = current;
+
           if (type === "step") {
-            return {
+            updated = {
               ...current,
               steps: [...(current.steps || []), data],
             };
-          }
-
-          if (type === "intent") {
-            return {
+          } else if (type === "intent") {
+            updated = {
               ...current,
               intent: data,
             };
-          }
-
-          if (type === "plan") {
-            return {
+          } else if (type === "plan") {
+            updated = {
               ...current,
               plan: data,
             };
-          }
-
-          if (type === "finding") {
-            return {
+          } else if (type === "finding") {
+            updated = {
               ...current,
               findings: [...(current.findings || []), data],
             };
-          }
-
-          if (type === "report") {
-            return {
+          } else if (type === "report") {
+            updated = {
               ...current,
               report: data.report || "",
             };
-          }
-
-          if (type === "done") {
-            return {
+          } else if (type === "done") {
+            updated = {
               ...current,
               ...data,
             };
           }
 
-          return current;
+          finalResearch = updated;
+          return updated;
         });
       });
+
+      await addMessageToConversation(conversationId, {
+        role: "assistant",
+        content: finalResearch.report || "Research completed.",
+        citations: finalResearch.citations || [],
+        research: finalResearch,
+      });
+
+      await refreshConversations();
     } catch (err: any) {
       setError(err.message || "Deep research failed");
     } finally {
@@ -468,9 +676,18 @@ export default function Home() {
               </button>
             </div>
 
+            <button
+              onClick={resetChatState}
+              className="mb-4 w-full rounded-2xl bg-white px-4 py-3 text-sm font-medium text-zinc-900"
+            >
+              New Chat
+            </button>
+
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-xl shadow-black/20">
               <div className="text-sm font-medium">Documents</div>
-              <div className="mt-1 text-xs text-zinc-400">Upload files and start chatting.</div>
+              <div className="mt-1 text-xs text-zinc-400">
+                Upload files and start chatting.
+              </div>
 
               <input
                 type="file"
@@ -480,7 +697,7 @@ export default function Home() {
                 className="mt-4 block w-full text-sm text-zinc-200 file:mr-3 file:rounded-xl file:border-0 file:bg-white file:px-4 file:py-2 file:text-zinc-900 hover:file:bg-zinc-100"
               />
 
-              <div className="mt-4 max-h-[52vh] space-y-2 overflow-auto pr-1">
+              <div className="mt-4 max-h-[28vh] space-y-2 overflow-auto pr-1">
                 {uploaded.length === 0 && (
                   <div className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-zinc-500">
                     No documents yet.
@@ -492,19 +709,27 @@ export default function Home() {
                   const active = selectedFile === file;
 
                   return (
-                    <motion.button
+                    <motion.div
                       key={file}
                       whileHover={{ y: -1, scale: 1.01 }}
                       whileTap={{ scale: 0.99 }}
                       onClick={() => setSelectedFile(file)}
-                      className={`w-full rounded-2xl border p-3 text-left transition ${
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedFile(file);
+                        }
+                      }}
+                      className={`w-full cursor-pointer rounded-2xl border p-3 text-left transition ${
                         active
                           ? "border-white/20 bg-white/[0.08]"
                           : "border-white/10 bg-black/20 hover:bg-white/[0.06]"
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-semibold">{file}</div>
                           {info ? (
                             <div className="mt-1 text-xs text-zinc-400">
@@ -515,19 +740,116 @@ export default function Home() {
                           )}
                         </div>
 
-                        <span
-                          className={`shrink-0 rounded-full px-2 py-1 text-[10px] ${
-                            info
-                              ? "border border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
-                              : "border border-white/10 bg-white/5 text-zinc-300"
-                          }`}
-                        >
-                          {info ? "ready" : "new"}
-                        </span>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span
+                            className={`rounded-full px-2 py-1 text-[10px] ${
+                              info
+                                ? "border border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+                                : "border border-white/10 bg-white/5 text-zinc-300"
+                            }`}
+                          >
+                            {info ? "ready" : "new"}
+                          </span>
+
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await deleteDocument(file);
+
+                                if (selectedFile === file) {
+                                  setSelectedFile("");
+                                }
+
+                                await refresh();
+                              } catch (err: any) {
+                                setError(err.message || "Failed to delete document");
+                              }
+                            }}
+                            className="rounded-lg border border-white/10 px-2 py-1 text-[10px] text-zinc-400 hover:text-red-300"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
-                    </motion.button>
+                    </motion.div>
                   );
                 })}
+              </div>
+            </div>
+
+            <div className="mt-6 min-h-0 flex-1 overflow-auto">
+              <div className="mb-2 text-xs uppercase tracking-wide text-zinc-500">
+                Recent Chats
+              </div>
+
+              <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                {[...conversations]
+                  .sort((a, b) => {
+                    const aPinned = pinnedChats.includes(a.id);
+                    const bPinned = pinnedChats.includes(b.id);
+
+                    if (aPinned === bPinned) return 0;
+                    return aPinned ? -1 : 1;
+                  })
+                  .map((conv) => (
+                  <div
+                    key={conv.id}
+                    className={`rounded-xl border ${
+                      activeConversationId === conv.id
+                        ? "border-white/20 bg-white/[0.08]"
+                        : "border-white/10 bg-white/[0.04]"
+                    }`}
+                  >
+                    <button
+                      onClick={() => loadConversation(conv.id)}
+                      className="w-full px-3 py-2 text-left hover:bg-white/[0.04]"
+                    >
+                      <div className="flex items-center gap-2">
+                        {pinnedChats.includes(conv.id) && (
+                          <span className="text-[10px] text-yellow-400">📌</span>
+                        )}
+                        <div className="text-sm font-medium text-zinc-200 truncate max-w-[190px]">
+                          {conv.title}
+                        </div>
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-500">
+                        {conv.mode} {conv.source ? `• ${conv.source}` : ""}
+                      </div>
+                    </button>
+
+                    <div className="border-t border-white/10 px-3 py-2 flex justify-between">
+                      <button
+                        onClick={() => {
+                          setPinnedChats((prev) =>
+                            prev.includes(conv.id)
+                              ? prev.filter((id) => id !== conv.id)
+                              : [...prev, conv.id]
+                          );
+                        }}
+                        className="text-xs text-yellow-400 hover:text-yellow-200"
+                      >
+                        {pinnedChats.includes(conv.id) ? "Unpin" : "Pin"}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          await deleteConversation(conv.id);
+
+                          setPinnedChats((prev) => prev.filter((id) => id !== conv.id));
+
+                          if (activeConversationId === conv.id) {
+                            resetChatState();
+                          }
+
+                          await refreshConversations();
+                        }}
+                        className="text-xs text-zinc-400 hover:text-red-300"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -546,25 +868,23 @@ export default function Home() {
                   </button>
 
                   <div>
-                    <div className="text-base font-semibold tracking-tight">Workspace</div>
+                    <div className="text-base font-semibold tracking-tight">
+                      Workspace
+                    </div>
                     <div className="text-xs text-zinc-400">
                       {selectedFile ? `Using ${selectedFile}` : "Searching all documents"}
                     </div>
                   </div>
                 </div>
 
-                {selectedDocInfo && (
-                  <div className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-300 md:block">
-                    {selectedDocInfo.indexed_chunks} chunks
-                  </div>
-                )}
+                
               </div>
 
               <ModeToggle mode={mode} setMode={setMode} />
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col px-4 pb-4 pt-4 lg:px-6">
+          <div className="flex h-full min-h-0 flex-1 flex-col px-4 pb-3 pt-3 lg:px-6">
             {error && (
               <motion.div
                 initial={{ opacity: 0, y: -8 }}
@@ -576,17 +896,19 @@ export default function Home() {
             )}
 
             <div className="min-h-0 flex-1 overflow-auto">
-              <div className="mx-auto flex max-w-4xl flex-col gap-6 pb-6">
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 pb-6">
                 {mode === "ask" ? (
                   <>
-                    {messages.length === 1 && !loading && (
+                    {messages.length === 1 && !loading && !activeConversationId && (
                       <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="mx-auto mt-8 w-full max-w-3xl"
+                        className="w-full pt-6"
                       >
                         <div className="mb-6 text-center">
-                          <div className="text-3xl font-semibold tracking-tight">Ask your documents</div>
+                          <div className="text-3xl font-semibold tracking-tight">
+                            Ask your documents
+                          </div>
                           <div className="mt-2 text-sm text-zinc-400">
                             Grounded answers with evidence from your files only.
                           </div>
@@ -624,6 +946,64 @@ export default function Home() {
                           }`}
                         >
                           <div className="whitespace-pre-wrap leading-7">{msg.text}</div>
+
+                          {false && msg.role === "assistant" && msg.top_candidates?.length ? (
+                            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                              <div className="mb-3 text-sm font-medium text-zinc-100">
+                                Top 3 Evidence Candidates
+                              </div>
+
+                              <div className="space-y-3">
+                                {msg.top_candidates.map((c, i) => (
+                                  <div
+                                    key={`${c.chunk_id}-${i}`}
+                                    className="rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="truncate text-xs font-semibold text-zinc-200">
+                                        {c.source} • p{c.page}
+                                      </div>
+                                      <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] text-zinc-200">
+                                        {Number(c.score || 0).toFixed(3)}
+                                      </span>
+                                    </div>
+                                    <div className="mt-2 text-sm leading-6 text-zinc-300">
+                                      {c.quote}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {false && msg.role === "assistant" && msg.citations?.length ? (
+                            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                              <div className="mb-3 text-sm font-medium text-zinc-100">
+                                Supporting Sources
+                              </div>
+
+                              <div className="space-y-3">
+                                {msg.citations.map((c, i) => (
+                                  <div
+                                    key={`${c.chunk_id}-citation-${i}`}
+                                    className="rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="truncate text-xs font-semibold text-zinc-200">
+                                        {c.source} • p{c.page}
+                                      </div>
+                                      <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] text-zinc-200">
+                                        {Number(c.score || 0).toFixed(3)}
+                                      </span>
+                                    </div>
+                                    <div className="mt-2 text-sm leading-6 text-zinc-300">
+                                      {c.quote}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       </motion.div>
                     ))}
@@ -642,16 +1022,19 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    {!researchResult && !loading && (
+                    {!researchResult && !loading && !activeConversationId && (
                       <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         className="mx-auto mt-8 w-full max-w-3xl"
                       >
                         <div className="mb-6 text-center">
-                          <div className="text-3xl font-semibold tracking-tight">Deep Research</div>
+                          <div className="text-3xl font-semibold tracking-tight">
+                            Deep Research
+                          </div>
                           <div className="mt-2 text-sm text-zinc-400">
-                            Multi-step reasoning, evidence retrieval, and structured research reports.
+                            Multi-step reasoning, evidence retrieval, and structured
+                            research reports.
                           </div>
                         </div>
 
@@ -670,6 +1053,22 @@ export default function Home() {
                         </div>
                       </motion.div>
                     )}
+
+                    {messages
+                      .filter((m) => m.role === "user")
+                      .map((msg, idx) => (
+                        <motion.div
+                          key={`research-user-${idx}`}
+                          initial={{ opacity: 0, y: 14 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.22, ease: "easeOut" }}
+                          className="flex justify-end"
+                        >
+                          <div className="max-w-[88%] rounded-[24px] bg-white px-5 py-4 text-zinc-900 shadow-xl shadow-black/20">
+                            <div className="whitespace-pre-wrap leading-7">{msg.text}</div>
+                          </div>
+                        </motion.div>
+                      ))}
 
                     {loading && mode === "research" && (
                       <motion.div
@@ -691,7 +1090,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mx-auto mt-4 w-full max-w-4xl">
+            <div className="sticky bottom-0 mx-auto mt-4 w-full max-w-4xl bg-[linear-gradient(to_top,rgba(9,9,11,0.96),rgba(9,9,11,0.75),transparent)] pt-4">
               <div className="mb-3 flex flex-wrap gap-2">
                 {starterPrompts.map((prompt) => (
                   <button
