@@ -88,5 +88,95 @@
     "expected_keywords": [],
     "expected_source": null,
     "should_refuse": true
+  },
+  {
+    "id": "tc_011",
+    "question": "What happens to Gregor at the end of The Metamorphosis?",
+    "source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "expected_intent": "fact_extraction",
+    "expected_keywords": ["dies", "death", "dead"],
+    "expected_source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_012",
+    "question": "Who are the main characters in The Metamorphosis?",
+    "source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "expected_intent": "definition",
+    "expected_keywords": ["Gregor", "Grete", "father", "mother"],
+    "expected_source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_013",
+    "question": "How does Grete's attitude toward Gregor change over the course of the story?",
+    "source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "expected_intent": "comparison",
+    "expected_keywords": ["Grete", "Gregor", "sister"],
+    "expected_source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_014",
+    "question": "What is database normalization and why is it important?",
+    "source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "expected_intent": "definition",
+    "expected_keywords": ["normalization", "redundancy", "anomalies"],
+    "expected_source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_015",
+    "question": "What are entity-relationship diagrams used for in database design?",
+    "source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "expected_intent": "definition",
+    "expected_keywords": ["entity", "relationship", "diagram"],
+    "expected_source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_016",
+    "question": "What is the difference between a primary key and a foreign key?",
+    "source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "expected_intent": "comparison",
+    "expected_keywords": ["primary key", "foreign key", "constraint"],
+    "expected_source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_017",
+    "question": "How does Kafka use the transformation as a metaphor in the story?",
+    "source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "expected_intent": "research_synthesis",
+    "expected_keywords": ["transformation", "metaphor", "alienation"],
+    "expected_source": "1.-The-Metamorphosis-Franz-Kafka.pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_018",
+    "question": "What are the different types of database keys described in the textbook?",
+    "source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "expected_intent": "fact_extraction",
+    "expected_keywords": ["primary key", "candidate key", "foreign key"],
+    "expected_source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "should_refuse": false
+  },
+  {
+    "id": "tc_019",
+    "question": "What is the current GDP of Germany?",
+    "source": null,
+    "expected_intent": "fact_extraction",
+    "expected_keywords": [],
+    "expected_source": null,
+    "should_refuse": true
+  },
+  {
+    "id": "tc_020",
+    "question": "Compare the transaction management approaches discussed in the database textbook",
+    "source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "expected_intent": "comparison",
+    "expected_keywords": ["transaction", "concurrency", "locking"],
+    "expected_source": "Jeffrey A. Hoffer, V. Ramesh, Heikki Topi - Modern Database Management-Pearson (2017).pdf",
+    "should_refuse": false
   }
 ]
